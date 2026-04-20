@@ -4,8 +4,8 @@ use crate::{indices::{BatchId, OperationId, ResourceGroupId}, job::{Batch, Opera
 
 pub struct Schedule {
     resource_groups: Vec<ResourceGroup>,
-    batches: Vec<Batch>,
-    operations: Vec<Operation>
+    pub batches: Vec<Batch>,
+    pub operations: Vec<Operation>
 }
 
 impl Schedule {
@@ -104,7 +104,13 @@ impl Schedule {
         for operation in &self.operations {
             if self.is_operation_ready(operation.id, 0) {
                 queue.push_back(operation.id);
+                continue;
             }
+
+            // let start = self.batches[operation.assigned_batch_id].start_time;
+            // if start > 0 && !operation.is_scheduled() {
+            //     pending_operations.entry(start).or_default().push(operation.id);
+            // }
         }
         
         self.sort_eligible_operation_ids_queue(&mut queue);
@@ -112,7 +118,7 @@ impl Schedule {
         return queue;
     }
     
-    // переделать
+    // TODO redo later
     fn update_eligible_operation_ids_queue_at_time(&self, current_time: Time, eligible_operation_ids_queue: &mut VecDeque<OperationId>, pending_operations: &mut BTreeMap<Time, Vec<OperationId>>) {
         if let Some(operation_ids) = pending_operations.remove(&current_time) {
             for operation_id in operation_ids {
@@ -124,7 +130,7 @@ impl Schedule {
         self.sort_eligible_operation_ids_queue(eligible_operation_ids_queue);
     }
     
-    // переделать
+    // TODO redo later
     fn process_completions(&mut self, current_time: Time, eligible_operation_ids_queue: &mut VecDeque<OperationId>, current_completed_operations: &mut BTreeMap<Time, Vec<OperationId>>, pending_operations: &mut BTreeMap<Time, Vec<OperationId>>) {
         if let Some(completed_oprations) = current_completed_operations.remove(&current_time) {
             for operation_id in completed_oprations {
@@ -146,25 +152,32 @@ impl Schedule {
         }
     }
 
+    // итеративность за счет сортироки фронта
+    // генератор
+    // Дообъединать массивы
+    // Сравнить методы
+    // Транспортировка между ресурсами
+ 
     pub fn compute_schedule_parallel(&mut self) -> Result<(), String> {
         let mut current_time: Time = 0;
         let mut unscheduled_operations_count: usize = self.operations.iter().filter(|op: &&Operation| !op.is_scheduled()).count();
         let mut eligible_operation_ids_queue: VecDeque<OperationId> = self.init_eligible_operation_ids_queue_at_time();
         
-        let mut current_completed_operation: BTreeMap<Time, Vec<OperationId>> = Default::default();
-        let mut pending_operations: BTreeMap<Time, Vec<OperationId>> = Default::default();
+        let mut pending_operations: BTreeMap<Time, Vec<OperationId>> = BTreeMap::new();
+        for operation in &self.operations {
+            let start = self.batches[operation.assigned_batch_id].start_time;
+            if start > 0 && !operation.is_scheduled() {
+                pending_operations.entry(start).or_default().push(operation.id);
+            }
+        }
         
-        while unscheduled_operations_count > 0 || eligible_operation_ids_queue.is_empty() {
+        let mut current_completed_operation: BTreeMap<Time, Vec<OperationId>> = Default::default();
+        
+        while unscheduled_operations_count > 0 {
             
             let initial_queue_len: usize = eligible_operation_ids_queue.len();
             for _ in 0..initial_queue_len {
                 let operation_id: OperationId = eligible_operation_ids_queue.pop_front().unwrap();
-                
-                // зачем проверять если операция готова, если в eligible_operation_ids_queue уже все готовы к выполнению прямо сейчас
-                if !self.is_operation_ready(operation_id, current_time) {
-                    eligible_operation_ids_queue.push_back(operation_id);
-                    continue;
-                }
                 
                 let operation: &Operation = &self.operations[operation_id];
                 let resource_group: &mut ResourceGroup = &mut self.resource_groups[operation.assigned_resource_group_id];
@@ -212,15 +225,6 @@ impl Schedule {
             .collect();
     }
     
-    // реализовать пробег по временной шкале. Фронт состоит из опреций, которые можно выполнить в текущий момент
-    // _ -> _ -> _
-    // _ -> _ -> _
-    // |---|------|--------------------------->
-    // ^
-    // кто может выполниться на этот момент? Упорядочиваем доступных и переходим на время освобождения ресурса
-    // |__________|-------|---|--------------->
-    //            ^
-    // повторям алгоритм
     pub fn compute_schedule(&mut self) -> Result<(), String> {
         let mut eligible_operation_ids: Vec<OperationId> = self.get_eligible_operation_ids();
         
