@@ -1,16 +1,28 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::{indices::{BatchId, OperationId, ResourceGroupId}, job::{Batch, Operation}, time::{Span, Time}, worker::ResourceGroup};
+use crate::indices::*;
+use crate::job::*;
+use crate::time::*;
+use crate::worker::*;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SortStrategy {
+    PriorityThenDueTime,
+    DueTimeThenPriority,
+    ShortestDurationFirst,
+    LongestDurationFirst
+}
 
 pub struct Schedule {
     resource_groups: Vec<ResourceGroup>,
     pub batches: Vec<Batch>,
-    pub operations: Vec<Operation>
+    pub operations: Vec<Operation>,
+    pending_operation_ids: BTreeMap<Time, VecDeque<OperationId>>
 }
 
 impl Schedule {
     pub fn new() -> Self {
-        return Self { resource_groups: Vec::new(), batches: Vec::new(), operations: Vec::new() };
+        return Self { resource_groups: Vec::new(), batches: Vec::new(), operations: Vec::new(), pending_operation_ids: BTreeMap::new() };
     }
     
     pub fn add_resource_group(&mut self, resource_group: ResourceGroup) -> ResourceGroupId {
@@ -77,124 +89,181 @@ impl Schedule {
         return self.batches[operation.assigned_batch_id].start_time <= current_time;
     }
     
-    fn next_event_time(&self, current_completed_operation: &BTreeMap<Time, Vec<OperationId>>, pending_operations: &BTreeMap<Time, Vec<OperationId>>) -> Option<Time> {
-        let next_current_completed_end_time: Option<Time> = current_completed_operation.keys().next().copied();
-        let next_pending_operations_start_time: Option<Time> = pending_operations.keys().next().copied();
+    fn init_pending_opeations(&mut self) {
+        for operation in &self.operations {
+            if operation.predecessor_ids.len() > 0 {
+                continue;
+            }
+            
+            let start_time: Time = self.batches[operation.assigned_batch_id].start_time;
+            self.pending_operation_ids.entry(start_time).or_default().push_back(operation.id);
+        }
         
-        match (next_current_completed_end_time, next_pending_operations_start_time) {
-            (Some(t1), Some(t2)) => Some(t1.min(t2)),
-            (Some(t), None) => Some(t),
-            (None, Some(t)) => Some(t),
-            (None, None) => None
+        for queue in self.pending_operation_ids.values_mut() {
+            let mut vec: Vec<OperationId> = queue.drain(..).collect();
+            vec.sort_by_key(|id: &OperationId| {
+                let op: &Operation = &self.operations[*id];
+                let batch: &Batch = &self.batches[op.assigned_batch_id];
+                (batch.priority, batch.due_time)
+            });
+            queue.extend(vec);
         }
     }
     
-    fn sort_eligible_operation_ids_queue(&self, queue: &mut VecDeque<OperationId>) {
+    fn find_next_event_time(&self, current_time: Time) -> Option<Time> {
+        // let mut next_event_time: Option<Time> = self.pending_operation_ids.keys().next().copied();
+        let mut next_event_time: Option<Time> = None;
+        
+        for resource_group in &self.resource_groups {
+            for resource in &resource_group.resources {
+                for span in &resource.allocations {
+                    if span.end <= current_time {
+                        continue;
+                    }
+                    
+                    match next_event_time {
+                        None => next_event_time = Some(span.end),
+                        Some(time) if span.end < time => next_event_time = Some(span.end),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        if let Some((&time, _)) = self.pending_operation_ids.range((current_time + 1)..).next() {
+            match next_event_time {
+                None => next_event_time = Some(time),
+                Some(existing) if time < existing => next_event_time = Some(time),
+                _ => {}
+            }
+        }
+        
+        return next_event_time;
+    }
+    
+    fn sort_queue_by_strategy(&self, queue: &mut VecDeque<OperationId>, strategy: SortStrategy) {
         let mut vec: Vec<OperationId> = queue.drain(..).collect();
-        vec.sort_by_key(|id: &OperationId| {
-            let op: &Operation = &self.operations[*id];
-            let batch: &Batch = &self.batches[op.assigned_batch_id];
-            (batch.priority, batch.due_time)
-        });
+        
+        match strategy {
+            SortStrategy::PriorityThenDueTime => {
+                vec.sort_by_key(|id: &OperationId| {
+                    let op: &Operation = &self.operations[*id];
+                    let batch: &Batch = &self.batches[op.assigned_batch_id];
+                    (batch.priority, batch.due_time)
+                });
+            }
+            SortStrategy::DueTimeThenPriority => {
+                vec.sort_by_key(|id: &OperationId| {
+                    let op: &Operation = &self.operations[*id];
+                    let batch: &Batch = &self.batches[op.assigned_batch_id];
+                    (batch.due_time, batch.priority)
+                });
+            }
+            SortStrategy::ShortestDurationFirst => {
+                vec.sort_by_key(|id: &OperationId| {
+                    self.operations[*id].duration
+                });
+            }
+            SortStrategy::LongestDurationFirst => {
+                vec.sort_by_key(|id: &OperationId| {
+                    std::cmp::Reverse(self.operations[*id].duration)
+                });
+            }
+        }
+        
         queue.extend(vec);
     }
     
-    fn init_eligible_operation_ids_queue_at_time(&self) -> VecDeque<OperationId> {
-        let mut queue: VecDeque<OperationId> = VecDeque::new();
-        for operation in &self.operations {
-            if self.is_operation_ready(operation.id, 0) {
-                queue.push_back(operation.id);
-                continue;
-            }
-
-            // let start = self.batches[operation.assigned_batch_id].start_time;
-            // if start > 0 && !operation.is_scheduled() {
-            //     pending_operations.entry(start).or_default().push(operation.id);
-            // }
-        }
-        
-        self.sort_eligible_operation_ids_queue(&mut queue);
-        
-        return queue;
-    }
-    
-    // TODO redo later
-    fn update_eligible_operation_ids_queue_at_time(&self, current_time: Time, eligible_operation_ids_queue: &mut VecDeque<OperationId>, pending_operations: &mut BTreeMap<Time, Vec<OperationId>>) {
-        if let Some(operation_ids) = pending_operations.remove(&current_time) {
-            for operation_id in operation_ids {
-                if self.is_operation_ready(operation_id, current_time) && !eligible_operation_ids_queue.contains(&operation_id) {
-                    eligible_operation_ids_queue.push_back(operation_id);
+    fn add_successors_to_pending_operations(&mut self, current_time: Time, current_completed_operation_ids: Vec<OperationId>) {
+        for operation_id in current_completed_operation_ids {
+            let operation = &self.operations[operation_id];
+            let successor_ids = &operation.successor_ids;
+            for successor_id in successor_ids {
+                let successor = &self.operations[*successor_id];
+                if successor.is_scheduled() || successor.predecessor_ids.iter().any(|id: &OperationId| !self.operations[*id].is_scheduled()) {
+                    continue;
                 }
-            }
-        }
-        self.sort_eligible_operation_ids_queue(eligible_operation_ids_queue);
-    }
-    
-    // TODO redo later
-    fn process_completions(&mut self, current_time: Time, eligible_operation_ids_queue: &mut VecDeque<OperationId>, current_completed_operations: &mut BTreeMap<Time, Vec<OperationId>>, pending_operations: &mut BTreeMap<Time, Vec<OperationId>>) {
-        if let Some(completed_oprations) = current_completed_operations.remove(&current_time) {
-            for operation_id in completed_oprations {
-                let successor_ids = &self.operations[operation_id].successor_ids; // копируем
-                for successor_id in successor_ids {
-                    let successor = &self.operations[*successor_id];
-                    if !successor.is_scheduled() && successor.predecessor_ids.iter().all(|id: &OperationId| self.operations[*id].is_scheduled()) {
-                        let start = self.batches[successor.assigned_batch_id].start_time;
-                        if start <= current_time {
-                            if !eligible_operation_ids_queue.contains(successor_id) {
-                                eligible_operation_ids_queue.push_back(*successor_id);
-                            }
-                        } else {
-                            pending_operations.entry(start).or_default().push(*successor_id);
-                        }
+                
+                let max_predecessor_end: Time = successor
+                    .predecessor_ids
+                    .iter()
+                    .map(|&pid| {
+                        self.operations[pid]
+                            .scheduled_span
+                            .expect("predecessor must be scheduled")
+                            .end
+                    })
+                    .max()
+                    .unwrap_or(0);
+                
+                let mut start_time: Time = self.batches[successor.assigned_batch_id].start_time.max(max_predecessor_end);
+                if start_time < current_time {
+                    start_time = current_time;
+                }
+                
+                let queue = self.pending_operation_ids.entry(start_time).or_default();
+                
+                if !queue.contains(successor_id) {
+                    queue.push_back(*successor_id);
+                    
+                    for queue in self.pending_operation_ids.values_mut() {
+                        let mut vec: Vec<OperationId> = queue.drain(..).collect();
+                        vec.sort_by_key(|id: &OperationId| {
+                            let op: &Operation = &self.operations[*id];
+                            let batch: &Batch = &self.batches[op.assigned_batch_id];
+                            (batch.priority, batch.due_time)
+                        });
+                        queue.extend(vec);
                     }
                 }
             }
         }
     }
-
-    // итеративность за счет сортироки фронта
-    // генератор
-    // Дообъединать массивы
-    // Сравнить методы
-    // Транспортировка между ресурсами
- 
-    pub fn compute_schedule_parallel(&mut self) -> Result<(), String> {
-        let mut current_time: Time = 0;
-        let mut unscheduled_operations_count: usize = self.operations.iter().filter(|op: &&Operation| !op.is_scheduled()).count();
-        let mut eligible_operation_ids_queue: VecDeque<OperationId> = self.init_eligible_operation_ids_queue_at_time();
-        
-        let mut pending_operations: BTreeMap<Time, Vec<OperationId>> = BTreeMap::new();
-        for operation in &self.operations {
-            let start = self.batches[operation.assigned_batch_id].start_time;
-            if start > 0 && !operation.is_scheduled() {
-                pending_operations.entry(start).or_default().push(operation.id);
-            }
+    
+    fn update_pending_operation_ids(&mut self, current_time: Time, next_event_time: Time) {
+        if let Some(current_time_queue) = self.pending_operation_ids.remove(&current_time) {
+            self.pending_operation_ids.entry(next_event_time).or_default().extend(current_time_queue.iter());
         }
-        
-        let mut current_completed_operation: BTreeMap<Time, Vec<OperationId>> = Default::default();
+    }
+    
+    // итеративность за счет сортировки фронта
+    // генератор
+    // сравнить методы
+    // транспортировка между ресурсами ?
+    
+    pub fn compute_schedule_parallel(&mut self) -> Result<(), String> {
+        self.init_pending_opeations();
+        let mut current_time: Time = 0;
+        let mut unscheduled_operations_count: usize = self.operations.len();
         
         while unscheduled_operations_count > 0 {
+            let mut current_completed_operation_ids: Vec<OperationId> = Default::default();
             
-            let initial_queue_len: usize = eligible_operation_ids_queue.len();
-            for _ in 0..initial_queue_len {
-                let operation_id: OperationId = eligible_operation_ids_queue.pop_front().unwrap();
-                
-                let operation: &Operation = &self.operations[operation_id];
-                let resource_group: &mut ResourceGroup = &mut self.resource_groups[operation.assigned_resource_group_id];
+            if let Some(current_time_queue) = self.pending_operation_ids.get_mut(&current_time) {
+                let initial_queue_len: usize = current_time_queue.len();
+                for _ in 0..initial_queue_len {
+                    let operation_id: OperationId = current_time_queue.pop_front().unwrap();
+                    
+                    let operation: &Operation = &self.operations[operation_id];
+                    let resource_group: &mut ResourceGroup = &mut self.resource_groups[operation.assigned_resource_group_id];
 
-                if let Some((allocated_resource_id, work_span)) = resource_group.allocate_best_resource_for_operation(operation.duration, current_time) {
-                    if work_span.start == current_time {
-                        let operation: &mut Operation = &mut self.operations[operation_id];
-                        operation.assigned_resource_id = Some(allocated_resource_id);
-                        operation.scheduled_span = Some(work_span);
-                        
-                        unscheduled_operations_count -= 1;
-                        
-                        current_completed_operation.entry(work_span.end).or_default().push(operation_id);
+                    if let Some((allocated_resource_id, work_span)) = resource_group.allocate_best_resource_for_operation(operation.duration, current_time) {
+                        if work_span.start == current_time {
+                            let operation: &mut Operation = &mut self.operations[operation_id];
+                            operation.assigned_resource_id = Some(allocated_resource_id);
+                            operation.scheduled_span = Some(work_span);
+                            
+                            unscheduled_operations_count -= 1;
+                            
+                            current_completed_operation_ids.push(operation_id);
+                        }
+                        else {
+                            current_time_queue.push_back(operation_id);
+                        }
                     }
-                }
-                else {
-                    eligible_operation_ids_queue.push_back(operation_id);
+                    else {
+                        current_time_queue.push_back(operation_id);
+                    }
                 }
             }
             
@@ -202,14 +271,25 @@ impl Schedule {
                 break;
             }
             
-            let next_time: Time = self.next_event_time(&current_completed_operation, &pending_operations).ok_or("no future event times")?;
-            if next_time == current_time {
-                return Err(format!("unable to find next_time after current_time: {current_time}. unscheduled_operations_count: {unscheduled_operations_count}"));
+            let next_event_time: Time = self.find_next_event_time(current_time).ok_or("no future event times")?;
+            if next_event_time == current_time {
+                return Err(format!("unable to find next_event_time after current_time: {current_time}. unscheduled_operations_count: {unscheduled_operations_count}"));
             }
-            current_time = next_time;
             
-            self.process_completions(current_time, &mut eligible_operation_ids_queue, &mut current_completed_operation, &mut pending_operations);
-            self.update_eligible_operation_ids_queue_at_time(current_time, &mut eligible_operation_ids_queue, &mut pending_operations);
+            self.add_successors_to_pending_operations(current_time, current_completed_operation_ids);
+            self.update_pending_operation_ids(current_time, next_event_time);
+            
+            for queue in self.pending_operation_ids.values_mut() {
+                let mut vec: Vec<OperationId> = queue.drain(..).collect();
+                vec.sort_by_key(|id: &OperationId| {
+                    let op: &Operation = &self.operations[*id];
+                    let batch: &Batch = &self.batches[op.assigned_batch_id];
+                    (batch.priority, batch.due_time)
+                });
+                queue.extend(vec);
+            }
+            
+            current_time = next_event_time;
         }
         
         return Ok(());

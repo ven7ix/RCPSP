@@ -1,5 +1,5 @@
 [package]
-name = "RCPSP"
+name = "rcpsp"
 version = "0.1.0"
 edition = "2024"
 

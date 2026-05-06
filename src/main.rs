@@ -1,22 +1,13 @@
-pub mod time;
-pub mod indices;
-pub mod job;
-pub mod worker;
-pub mod schedule;
-pub mod schedule_generator;
-
-use crate::job::Operation;
-use crate::job::Batch;
-use crate::worker::ResourceGroup;
-use crate::schedule::Schedule;
-use crate::schedule_generator::GenerationConfig;
+use rcpsp::job::*;
+use rcpsp::worker::*;
+use rcpsp::schedule::*;
 
 // добавить генерацию задачи
 // добавить итерации алгоритма с разными параметрами
 fn main() {
     // let config = GenerationConfig::new();
     // let mut schedule = schedule_generator::generate_random_schedule(&config);
-    // match schedule.compute_schedule() {
+    // match schedule.compute_schedule_parallel_new() {
     //     Ok(()) => schedule.print_schedule(""),
     //     Err(e) => println!("Error: {}", e),
     // }
