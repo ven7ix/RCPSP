@@ -1,39 +1,53 @@
-use rcpsp::job::*;
-use rcpsp::worker::*;
+use rcpsp::schedule_generator::*;
 use rcpsp::schedule::*;
+use std::env;
+use std::path::PathBuf;
 
-// добавить генерацию задачи
-// добавить итерации алгоритма с разными параметрами
 fn main() {
-    // let config = GenerationConfig::new();
-    // let mut schedule = schedule_generator::generate_random_schedule(&config);
-    // match schedule.compute_schedule_parallel_new() {
-    //     Ok(()) => schedule.print_schedule(""),
-    //     Err(e) => println!("Error: {}", e),
-    // }
+    let config: GenerationConfig = if let Some(path) = env::args().nth(1) {
+        let path: PathBuf = PathBuf::from(path);
+        match load_config_from_json(&path) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!("Ошибка загрузки конфигурации из {}: {}", path.display(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+    else {
+        GenerationConfig::default()
+    };
+
+    let base_schedule = generate_schedule(&config);
     
-    let mut schedule: Schedule = Schedule::new();
-
-    schedule.add_resource_group(ResourceGroup::new(0, 2));
-
-    schedule.add_batch(Batch::new(0, 0, 10, 0));
-    schedule.add_batch(Batch::new(0, 0, 10, 0));
-
-    schedule.add_operation(Operation::new(0, 5, 0, 0));
-    schedule.add_operation(Operation::new(1, 3, 0, 0));
-    schedule.add_operation(Operation::new(2, 4, 1, 0));
-    schedule.add_operation(Operation::new(3, 2, 1, 0));
-
-    schedule.add_precedence(0, 2);
-    schedule.add_precedence(1, 3);
-
-    // match schedule.compute_schedule() {
-    //     Ok(()) => schedule.print_schedule(""),
-    //     Err(e) => println!("Error: {}", e),
-    // }
+    compute_schedule_serial(&base_schedule);
     
-    match schedule.compute_schedule_parallel() {
-        Ok(()) => schedule.print_schedule("parallel"),
+    compute_schedule_parallel(&base_schedule);
+}
+
+fn compute_schedule_serial(base_schedule: &Schedule) {
+    let mut schedule_serial: Schedule = base_schedule.clone();
+    match schedule_serial.compute_serial() {
+        Ok(()) => {
+            println!("{}", schedule_serial.total_execute_time());
+        },
         Err(e) => println!("Error: {}", e),
+    }
+    
+    let filename: &'static str = "best_schedule_serial.txt";
+    match schedule_serial.save_to_file(filename, "PriorityThenDueTime") {
+        Ok(()) => println!("Saved to {}", filename),
+        Err(e) => eprintln!("Failed to save file: {}", e),
+    }
+}
+
+fn compute_schedule_parallel(base_schedule: &Schedule) {
+    let (schedule_parallel, strategy, execute_time) = Schedule::find_best_schedule(&base_schedule);
+    println!("Best strategy: {:?}, execute time: {}", strategy, execute_time);
+    
+    let filename: &'static str = "best_schedule_parallel.txt";
+    match schedule_parallel.save_to_file(filename, &format!("{:?}", strategy)) {
+        Ok(()) => println!("Saved to {}", filename),
+        Err(e) => eprintln!("Failed to save file: {}", e),
     }
 }

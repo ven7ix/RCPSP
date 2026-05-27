@@ -1,0 +1,13 @@
+{
+    "resource_group_sizes": [2, 1],
+    "operation_chains_count": 100,
+    "min_opearions_per_chain": 3,
+    "max_opearions_per_chain": 6,
+    "max_operation_duration": 10,
+    "batch_count": 3,
+    "max_batch_priority": 3,
+    "max_batch_start_time": 5,
+    "batch_due_time_factor": 2.0,
+    "extra_precedence_probability": 0.2,
+    "random_seed": 4
+}

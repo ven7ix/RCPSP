@@ -1,0 +1,6 @@
+Schedule generated with strategy: PriorityThenDueTime
+Total execute time: 10
+Operations:
+operation id:   0 | earliest start:   0 | start:    0 | end:    4 | duration:   4 | batch id: 0 | group id: 0 | predecessor ids: []
+operation id:   1 | earliest start:   0 | start:    4 | end:    9 | duration:   5 | batch id: 0 | group id: 0 | predecessor ids: [0]
+operation id:   2 | earliest start:   0 | start:    9 | end:   10 | duration:   1 | batch id: 0 | group id: 0 | predecessor ids: [1]

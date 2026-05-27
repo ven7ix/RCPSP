@@ -1,5 +1,6 @@
 use crate::{indices::{BatchId, OperationId, ResourceGroupId, ResourceId}, time::{Span, Time}};
 
+#[derive(Clone)]
 pub struct Operation {
     pub id: OperationId,
     pub duration: Time,
@@ -30,6 +31,7 @@ impl Operation {
     }
 }
 
+#[derive(Clone)]
 pub struct Batch {
     pub id: BatchId,
     pub operation_ids: Vec<OperationId>,

@@ -1,5 +1,6 @@
 use crate::{indices::{ResourceGroupId, ResourceId}, time::{Span, Time}};
 
+#[derive(Clone)]
 pub struct Resource {
     pub id: ResourceId,
     pub allocations: Vec<Span>
@@ -28,15 +29,29 @@ impl Resource {
     }
 }
 
+#[derive(Clone)]
 pub struct ResourceGroup {
     pub id: ResourceGroupId,
-    pub resources: Vec<Resource>
+    pub resources: Vec<Resource>,
+    pub next_available_time: Time
 }
 
 impl ResourceGroup {
     pub fn new(id: ResourceGroupId, resource_count: usize) -> Self {
-        let resources: Vec<Resource> = (0..resource_count).map(|id: ResourceId| Resource::new(id)).collect();
-        return Self { id: id, resources: resources };
+        return Self {
+            id: id, 
+            resources: (0..resource_count).map(|id: ResourceId| Resource::new(id)).collect(),
+            next_available_time: 0
+        };
+    }
+    
+    fn update_next_available_time(&mut self) {
+        self.next_available_time = self
+            .resources
+            .iter()
+            .filter_map(|resource| resource.allocations.last().map(|span| span.end))
+            .min()
+            .unwrap_or(0);
     }
     
     pub fn allocate_best_resource_for_operation(&mut self, duration: Time, after_time: Time) -> Option<(ResourceId, Span)> {
@@ -52,6 +67,7 @@ impl ResourceGroup {
         
         if let Some((id, span)) = best_resource {
             self.resources[id].allocate(span);
+            self.update_next_available_time();
             return Some((id, span));
         }
         
