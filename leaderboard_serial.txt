@@ -1,0 +1,14 @@
+┌─ SERIAL LEADERBOARD ──────────────────────────────────────────────────
+│ МЕС  СТРАТЕГИЯ                            СР. ВРЕМЯ      СУММА МЕСТ
+│ ──────────────────────────────────────────────────────────────────────
+│ 1  LongestCriticalPathFirst                1130.6              13
+│ 2  MostSuccessorsFirst                     1135.0              30
+│ 3  DueTimeThenPriority                     1142.9              37
+│ -  LongestSuccessorDuration                1139.8              45
+│ -  PriorityThenDueTime                     1144.8              46
+│ -  EarliestDueDate                         1142.9              49
+│ -  LongestDurationFirst                    1154.9              65
+│ -  FewestSuccessorsFirst                   1164.8              75
+│ -  ShortestSuccessorDuration               1216.2              91
+│ -  ShortestDurationFirst                   1250.3              99
+└────────────────────────────────────────────────────────────────────────

@@ -20,6 +20,16 @@ pub enum SortStrategy {
     Random,
 }
 
+impl SortStrategy {
+    pub fn all() -> &'static [SortStrategy] {
+        &[SortStrategy::PriorityThenDueTime, SortStrategy::DueTimeThenPriority, SortStrategy::ShortestDurationFirst, SortStrategy::LongestDurationFirst, SortStrategy::MostSuccessorsFirst, SortStrategy::FewestSuccessorsFirst, SortStrategy::LongestSuccessorDuration, SortStrategy::ShortestSuccessorDuration, SortStrategy::EarliestDueDate, SortStrategy::LongestCriticalPathFirst, SortStrategy::Random]
+    }
+
+    pub fn all_except_random() -> &'static [SortStrategy] {
+        &[SortStrategy::PriorityThenDueTime, SortStrategy::DueTimeThenPriority, SortStrategy::ShortestDurationFirst, SortStrategy::LongestDurationFirst, SortStrategy::MostSuccessorsFirst, SortStrategy::FewestSuccessorsFirst, SortStrategy::LongestSuccessorDuration, SortStrategy::ShortestSuccessorDuration, SortStrategy::EarliestDueDate, SortStrategy::LongestCriticalPathFirst]
+    }
+}
+
 fn sort_queue_by_strategy(operations: &Vec<Operation>, batches: &Vec<Batch>, critical_path_data: &Option<CriticalPathData>, queue: &mut VecDeque<OperationId>, strategy: SortStrategy) {
     let mut vec: Vec<OperationId> = queue.drain(..).collect();
 

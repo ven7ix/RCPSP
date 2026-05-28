@@ -1,0 +1,14 @@
+┌─ PARALLEL LEADERBOARD ──────────────────────────────────────────────────
+│ МЕС  СТРАТЕГИЯ                            СР. ВРЕМЯ      СУММА МЕСТ
+│ ──────────────────────────────────────────────────────────────────────
+│ 1  ShortestDurationFirst                   1132.1              30
+│ 2  PriorityThenDueTime                     1135.8              41
+│ 3  DueTimeThenPriority                     1135.0              42
+│ -  LongestCriticalPathFirst                1133.3              44
+│ -  LongestSuccessorDuration                1134.3              45
+│ -  MostSuccessorsFirst                     1134.7              47
+│ -  FewestSuccessorsFirst                   1134.9              55
+│ -  EarliestDueDate                         1135.0              58
+│ -  LongestDurationFirst                    1143.2              89
+│ -  ShortestSuccessorDuration               1150.1              99
+└────────────────────────────────────────────────────────────────────────
