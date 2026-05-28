@@ -4,7 +4,7 @@
 //     use rcpsp::time::*;
 //     use rcpsp::worker::*;
 //     use rcpsp::schedule::*;
-    
+
 //     /// Вспомогательная функция: проверяет, что все предшественники завершились до начала операции
 //     fn schedule_is_valid(schedule: &Schedule) -> bool {
 //         for op in &schedule.operations {
@@ -21,17 +21,17 @@
 //                         if pred_span.end > start_time {
 //                             return false; // предшественник ещё не закончился
 //                         }
-//                     } 
+//                     }
 //                     else {
 //                         return false; // предшественник не запланирован вообще
 //                     }
 //                 }
-//             } 
+//             }
 //             else {
 //                 return false; // операция не запланирована
 //             }
 //         }
-        
+
 //         return true;
 //     }
 // }

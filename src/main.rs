@@ -1,5 +1,5 @@
-use rcpsp::schedule_generator::*;
 use rcpsp::schedule::*;
+use rcpsp::schedule_generator::*;
 use std::env;
 use std::path::PathBuf;
 
@@ -13,38 +13,32 @@ fn main() {
                 std::process::exit(1);
             }
         }
-    }
-    else {
+    } else {
         GenerationConfig::default()
     };
 
-    let base_schedule = generate_schedule(&config);
-    
+    let base_schedule: Schedule = generate_schedule(&config);
+
     compute_schedule_serial(&base_schedule);
-    
+
     compute_schedule_parallel(&base_schedule);
 }
 
 fn compute_schedule_serial(base_schedule: &Schedule) {
-    let mut schedule_serial: Schedule = base_schedule.clone();
-    match schedule_serial.compute_serial() {
-        Ok(()) => {
-            println!("{}", schedule_serial.total_execute_time());
-        },
-        Err(e) => println!("Error: {}", e),
-    }
-    
+    let (schedule_parallel, strategy, execute_time) = Schedule::find_best_schedule_serial(&base_schedule);
+    println!("Best strategy: {:?}, execute time: {}", strategy, execute_time);
+
     let filename: &'static str = "best_schedule_serial.txt";
-    match schedule_serial.save_to_file(filename, "PriorityThenDueTime") {
+    match schedule_parallel.save_to_file(filename, &format!("{:?}", strategy)) {
         Ok(()) => println!("Saved to {}", filename),
         Err(e) => eprintln!("Failed to save file: {}", e),
     }
 }
 
 fn compute_schedule_parallel(base_schedule: &Schedule) {
-    let (schedule_parallel, strategy, execute_time) = Schedule::find_best_schedule(&base_schedule);
+    let (schedule_parallel, strategy, execute_time) = Schedule::find_best_schedule_parallel(&base_schedule);
     println!("Best strategy: {:?}, execute time: {}", strategy, execute_time);
-    
+
     let filename: &'static str = "best_schedule_parallel.txt";
     match schedule_parallel.save_to_file(filename, &format!("{:?}", strategy)) {
         Ok(()) => println!("Saved to {}", filename),

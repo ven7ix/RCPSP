@@ -1,4 +1,7 @@
-use crate::{indices::{BatchId, OperationId, ResourceGroupId, ResourceId}, time::{Span, Time}};
+use crate::{
+    indices::{BatchId, OperationId, ResourceGroupId, ResourceId},
+    time::{Span, Time},
+};
 
 #[derive(Clone)]
 pub struct Operation {
@@ -9,7 +12,7 @@ pub struct Operation {
     pub predecessor_ids: Vec<OperationId>,
     pub successor_ids: Vec<OperationId>,
     pub assigned_resource_id: Option<ResourceId>,
-    pub scheduled_span: Option<Span>
+    pub scheduled_span: Option<Span>,
 }
 
 impl Operation {
@@ -22,10 +25,10 @@ impl Operation {
             predecessor_ids: Vec::new(),
             successor_ids: Vec::new(),
             assigned_resource_id: None,
-            scheduled_span: None
+            scheduled_span: None,
         };
     }
-    
+
     pub fn is_scheduled(&self) -> bool {
         return self.scheduled_span.is_some();
     }
@@ -37,7 +40,7 @@ pub struct Batch {
     pub operation_ids: Vec<OperationId>,
     pub start_time: Time,
     pub due_time: Time,
-    pub priority: usize
+    pub priority: usize,
 }
 
 impl Batch {
@@ -47,7 +50,7 @@ impl Batch {
             operation_ids: Vec::new(),
             start_time: start_time,
             due_time: due_time,
-            priority: priority
+            priority: priority,
         };
     }
 }

@@ -1,8 +1,8 @@
 use crate::indices::*;
 use crate::job::*;
+use crate::schedule::Schedule;
 use crate::time::*;
 use crate::worker::*;
-use crate::schedule::Schedule;
 use rand::RngExt;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -104,10 +104,7 @@ pub fn generate_schedule(config: &GenerationConfig) -> Schedule {
 
     // batches due times
     for (batch_id, op_ids) in batch_operation_ids.iter().enumerate() {
-        let total_duration: Time = op_ids
-            .iter()
-            .map(|&op_id| schedule.operations[op_id].duration)
-            .sum();
+        let total_duration: Time = op_ids.iter().map(|&op_id| schedule.operations[op_id].duration).sum();
         let slack = (total_duration as f64 * config.batch_due_time_factor) as Time;
         let due = schedule.batches[batch_id].start_time + slack + rng.random_range(0..=5);
         schedule.batches[batch_id].due_time = due;
