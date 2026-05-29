@@ -1,14 +1,14 @@
-┌─ PARALLEL LEADERBOARD ──────────────────────────────────────────────────
-│ МЕС  СТРАТЕГИЯ                            СР. ВРЕМЯ      СУММА МЕСТ
-│ ──────────────────────────────────────────────────────────────────────
-│ 1  ShortestDurationFirst                   1132.1              30
-│ 2  PriorityThenDueTime                     1135.8              41
-│ 3  DueTimeThenPriority                     1135.0              42
-│ -  LongestCriticalPathFirst                1133.3              44
-│ -  LongestSuccessorDuration                1134.3              45
-│ -  MostSuccessorsFirst                     1134.7              47
-│ -  FewestSuccessorsFirst                   1134.9              55
-│ -  EarliestDueDate                         1135.0              58
-│ -  LongestDurationFirst                    1143.2              89
-│ -  ShortestSuccessorDuration               1150.1              99
-└────────────────────────────────────────────────────────────────────────
+Parallel Leaderboard ------------------------------------------------------
+Placement   Strategy                        Avg time        Total points  
+--------------------------------------------------------------------------
+1           ShortestDurationFirst           1132.1          31            
+2           PriorityThenDueTime             1135.8          43            
+3           LongestCriticalPathFirst        1133.3          44            
+-           DueTimeThenPriority             1135.0          44            
+-           LongestSuccessorDuration        1134.3          47            
+-           MostSuccessorsFirst             1134.7          49            
+-           FewestSuccessorsFirst           1134.9          56            
+-           EarliestDueDate                 1135.0          60            
+-           Random                          1139.6          81            
+-           LongestDurationFirst            1143.2          96            
+-           ShortestSuccessorDuration       1150.1          109           

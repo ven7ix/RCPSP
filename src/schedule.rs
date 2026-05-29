@@ -24,10 +24,6 @@ impl SortStrategy {
     pub fn all() -> &'static [SortStrategy] {
         &[SortStrategy::PriorityThenDueTime, SortStrategy::DueTimeThenPriority, SortStrategy::ShortestDurationFirst, SortStrategy::LongestDurationFirst, SortStrategy::MostSuccessorsFirst, SortStrategy::FewestSuccessorsFirst, SortStrategy::LongestSuccessorDuration, SortStrategy::ShortestSuccessorDuration, SortStrategy::EarliestDueDate, SortStrategy::LongestCriticalPathFirst, SortStrategy::Random]
     }
-
-    pub fn all_except_random() -> &'static [SortStrategy] {
-        &[SortStrategy::PriorityThenDueTime, SortStrategy::DueTimeThenPriority, SortStrategy::ShortestDurationFirst, SortStrategy::LongestDurationFirst, SortStrategy::MostSuccessorsFirst, SortStrategy::FewestSuccessorsFirst, SortStrategy::LongestSuccessorDuration, SortStrategy::ShortestSuccessorDuration, SortStrategy::EarliestDueDate, SortStrategy::LongestCriticalPathFirst]
-    }
 }
 
 fn sort_queue_by_strategy(operations: &Vec<Operation>, batches: &Vec<Batch>, critical_path_data: &Option<CriticalPathData>, queue: &mut VecDeque<OperationId>, strategy: SortStrategy) {
@@ -122,8 +118,7 @@ impl Schedule {
     }
 
     pub fn add_resource_group(&mut self, resource_group: ResourceGroup) -> ResourceGroupId {
-        self.resource_groups
-            .push(resource_group);
+        self.resource_groups.push(resource_group);
         return self.resource_groups.len() - 1;
     }
 
@@ -159,9 +154,7 @@ impl Schedule {
             }
         }
 
-        let mut queue: VecDeque<usize> = (0..n)
-            .filter(|&i| in_degree[i] == 0)
-            .collect();
+        let mut queue: VecDeque<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
         let mut order: Vec<usize> = Vec::with_capacity(n);
 
         while let Some(id) = queue.pop_front() {
@@ -330,10 +323,7 @@ impl Schedule {
     }
 
     fn update_pending_operation_ids(&mut self, current_time: Time, next_event_time: Time) {
-        if let Some(current_time_queue) = self
-            .pending_operation_ids
-            .remove(&current_time)
-        {
+        if let Some(current_time_queue) = self.pending_operation_ids.remove(&current_time) {
             self.pending_operation_ids
                 .entry(next_event_time)
                 .or_default()
@@ -351,10 +341,7 @@ impl Schedule {
         while unscheduled_operations_count > 0 {
             let mut current_completed_operation_ids: Vec<OperationId> = Default::default();
 
-            if let Some(current_time_queue) = self
-                .pending_operation_ids
-                .get_mut(&current_time)
-            {
+            if let Some(current_time_queue) = self.pending_operation_ids.get_mut(&current_time) {
                 let initial_queue_len: usize = current_time_queue.len();
                 for _ in 0..initial_queue_len {
                     let operation_id: OperationId = current_time_queue.pop_front().unwrap();
@@ -544,10 +531,7 @@ impl Schedule {
         return self
             .operations
             .iter()
-            .filter_map(|oper: &Operation| {
-                oper.scheduled_span
-                    .map(|span: Span| span.end)
-            })
+            .filter_map(|oper: &Operation| oper.scheduled_span.map(|span: Span| span.end))
             .max()
             .unwrap_or(0);
     }

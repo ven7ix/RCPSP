@@ -54,11 +54,11 @@ impl StrategyStats {
 }
 
 fn run_leaderboard(config: &GenerationConfig, seed_count: u64) {
-    let mut serial_stats: Vec<StrategyStats> = SortStrategy::all_except_random()
+    let mut serial_stats: Vec<StrategyStats> = SortStrategy::all()
         .iter()
         .map(|&s| StrategyStats::new(s))
         .collect();
-    let mut parallel_stats: Vec<StrategyStats> = SortStrategy::all_except_random()
+    let mut parallel_stats: Vec<StrategyStats> = SortStrategy::all()
         .iter()
         .map(|&s| StrategyStats::new(s))
         .collect();
@@ -68,24 +68,22 @@ fn run_leaderboard(config: &GenerationConfig, seed_count: u64) {
         seeded_config.random_seed = seed;
         let base_schedule = generate_schedule(&seeded_config);
 
-        print!("Сид {:>4}/{} ", seed + 1, seed_count);
+        println!("Seed {:>4}/{} ", seed + 1, seed_count);
 
         run_seed_serial(&base_schedule, &mut serial_stats);
         run_seed_parallel(&base_schedule, &mut parallel_stats);
-
-        println!("✓");
     }
 
-    if let Err(e) = print_leaderboard("SERIAL", &mut serial_stats) {
+    if let Err(e) = save_leaderboard_to_file("leaderboard_serial.txt", "Serial", &mut serial_stats) {
         eprintln!("Failed to save leaderboard: {}", e);
     }
-    if let Err(e) = print_leaderboard("PARALLEL", &mut parallel_stats) {
+    if let Err(e) = save_leaderboard_to_file("leaderboard_parallel.txt", "Parallel", &mut parallel_stats) {
         eprintln!("Failed to save leaderboard: {}", e);
     }
 }
 
 fn run_seed_serial(base_schedule: &Schedule, stats: &mut Vec<StrategyStats>) {
-    let mut results: Vec<(usize, u32)> = SortStrategy::all_except_random()
+    let mut results: Vec<(usize, u32)> = SortStrategy::all()
         .iter()
         .enumerate()
         .filter_map(|(i, &strategy)| {
@@ -99,7 +97,7 @@ fn run_seed_serial(base_schedule: &Schedule, stats: &mut Vec<StrategyStats>) {
 }
 
 fn run_seed_parallel(base_schedule: &Schedule, stats: &mut Vec<StrategyStats>) {
-    let mut results: Vec<(usize, u32)> = SortStrategy::all_except_random()
+    let mut results: Vec<(usize, u32)> = SortStrategy::all()
         .iter()
         .enumerate()
         .filter_map(|(i, &strategy)| {
@@ -117,12 +115,12 @@ fn accumulate(results: &mut Vec<(usize, u32)>, stats: &mut Vec<StrategyStats>) {
 
     for (rank, &(strategy_idx, time)) in results.iter().enumerate() {
         stats[strategy_idx].total_time += time as u64;
-        stats[strategy_idx].rank_sum += rank + 1; // места с 1
+        stats[strategy_idx].rank_sum += rank + 1;
         stats[strategy_idx].run_count += 1;
     }
 }
 
-fn print_leaderboard(label: &str, stats: &mut Vec<StrategyStats>) -> std::io::Result<()> {
+fn save_leaderboard_to_file(filename: &str, label: &str, stats: &mut Vec<StrategyStats>) -> std::io::Result<()> {
     use std::fs::File;
     use std::io::Write;
 
@@ -132,15 +130,14 @@ fn print_leaderboard(label: &str, stats: &mut Vec<StrategyStats>) -> std::io::Re
             .then_with(|| a.avg_time().partial_cmp(&b.avg_time()).unwrap())
     });
 
-    let filename = format!("leaderboard_{}.txt", label.to_lowercase());
     let mut file = File::create(&filename)?;
 
     let name_width = 30usize;
     let col = 14usize;
 
-    writeln!(file, "┌─ {} LEADERBOARD {}", label, "─".repeat(50))?;
-    writeln!(file, "│ {:>3}  {:<name_width$}  {:>col$}  {:>col$}", "МЕС", "СТРАТЕГИЯ", "СР. ВРЕМЯ", "СУММА МЕСТ", name_width = name_width, col = col)?;
-    writeln!(file, "│ {}", "─".repeat(name_width + col * 2 + 12))?;
+    writeln!(file, "{} Leaderboard {}", label, "-".repeat(53))?;
+    writeln!(file, "{:<10}  {:<name_width$}  {:<col$}  {:<col$}", "Placement", "Strategy", "Avg time", "Total points", name_width = name_width, col = col)?;
+    writeln!(file, "{}", "-".repeat(name_width + col * 2 + 16))?;
 
     for (place, s) in stats.iter().enumerate() {
         let medal = match place {
@@ -149,9 +146,8 @@ fn print_leaderboard(label: &str, stats: &mut Vec<StrategyStats>) -> std::io::Re
             2 => "3",
             _ => "-",
         };
-        writeln!(file, "│ {:>1}  {:<name_width$}  {:>col$.1}  {:>col$}", medal, format!("{:?}", s.strategy), s.avg_time(), s.rank_sum, name_width = name_width, col = col,)?;
+        writeln!(file, "{:<10}  {:<name_width$}  {:<col$.1}  {:<col$}", medal, format!("{:?}", s.strategy), s.avg_time(), s.rank_sum, name_width = name_width, col = col,)?;
     }
-    writeln!(file, "└{}", "─".repeat(name_width + col * 2 + 14))?;
 
     println!("Leaderboard saved to {}", filename);
     return Ok(());
