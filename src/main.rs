@@ -9,7 +9,7 @@ fn main() {
         match load_config_from_json(&path) {
             Ok(cfg) => cfg,
             Err(e) => {
-                eprintln!("Ошибка загрузки конфигурации из {}: {}", path.display(), e);
+                eprintln!("Error while loading config {}: {}", path.display(), e);
                 std::process::exit(1);
             }
         }
@@ -17,21 +17,10 @@ fn main() {
         GenerationConfig::default()
     };
 
-    // let base_schedule: Schedule = generate_schedule(&config);
-    // _ = Schedule::find_best_schedule_serial(&base_schedule);
-    // _ = Schedule::find_best_schedule_parallel(&base_schedule);
-
-    run_leaderboard(&config, 10);
+    run_leaderboard(&config, 500);
 }
 
-fn save_schedule_to_file(filename: &str, schedule: &Schedule, strategy: SortStrategy) {
-    match schedule.save_to_file(filename, &format!("{:?}", strategy)) {
-        Ok(()) => println!("Saved to {}", filename),
-        Err(e) => eprintln!("Failed to save file: {}", e),
-    }
-}
-
-// ─── Таблица лидеров ─────────────────────────────────────────────────────────
+// ─── Leaderboard ─────────────────────────────────────────────────────────
 
 struct StrategyStats {
     strategy: SortStrategy,

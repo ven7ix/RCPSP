@@ -1,14 +1,14 @@
-Serial Leaderboard ------------------------------------------------------
+Serial Leaderboard -----------------------------------------------------
 Placement   Strategy                        Avg time        Total points  
 --------------------------------------------------------------------------
-1           LongestCriticalPathFirst        1130.6          13            
-2           MostSuccessorsFirst             1135.0          30            
-3           DueTimeThenPriority             1142.9          40            
--           LongestSuccessorDuration        1139.8          48            
--           PriorityThenDueTime             1144.8          50            
--           EarliestDueDate                 1142.9          52            
--           Random                          1148.7          60            
--           LongestDurationFirst            1154.9          73            
--           FewestSuccessorsFirst           1164.8          84            
--           ShortestSuccessorDuration       1216.2          101           
--           ShortestDurationFirst           1250.3          109           
+1           LongestCriticalPathFirst        508.2           972           
+2           MostSuccessorsFirst             510.7           982           
+3           LongestSuccessorDuration        512.7           1539          
+-           Random                          530.8           3212          
+-           DueTimeThenPriority             533.5           3238          
+-           LongestDurationFirst            532.5           3349          
+-           PriorityThenDueTime             534.7           3462          
+-           EarliestDueDate                 533.5           3789          
+-           FewestSuccessorsFirst           538.9           4027          
+-           ShortestSuccessorDuration       540.7           4189          
+-           ShortestDurationFirst           541.6           4241          

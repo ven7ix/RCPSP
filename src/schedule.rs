@@ -322,15 +322,6 @@ impl Schedule {
         }
     }
 
-    fn update_pending_operation_ids(&mut self, current_time: Time, next_event_time: Time) {
-        if let Some(current_time_queue) = self.pending_operation_ids.remove(&current_time) {
-            self.pending_operation_ids
-                .entry(next_event_time)
-                .or_default()
-                .extend(current_time_queue.iter());
-        }
-    }
-
     pub fn compute_parallel(&mut self, strategy: SortStrategy) -> Result<(), String> {
         self.critical_path_data = Some(self.compute_critical_path_data()?);
         self.init_pending_opeations(strategy);
@@ -339,41 +330,57 @@ impl Schedule {
         let mut unscheduled_operations_count: usize = self.operations.len();
 
         while unscheduled_operations_count > 0 {
-            let mut current_completed_operation_ids: Vec<OperationId> = Default::default();
+            loop {
+                let mut any_scheduled: bool = false;
+                let mut current_completed: Vec<OperationId> = Default::default();
 
-            if let Some(current_time_queue) = self.pending_operation_ids.get_mut(&current_time) {
-                let initial_queue_len: usize = current_time_queue.len();
-                for _ in 0..initial_queue_len {
-                    let operation_id: OperationId = current_time_queue.pop_front().unwrap();
+                if let Some(mut current_time_queue) = self.pending_operation_ids.remove(&current_time) {
+                    let initial_queue_len: usize = current_time_queue.len();
+                    for _ in 0..initial_queue_len {
+                        let operation_id: OperationId = current_time_queue.pop_front().unwrap();
+                        let operation: &Operation = &self.operations[operation_id];
+                        let resource_group: &mut ResourceGroup = &mut self.resource_groups[operation.assigned_resource_group_id];
 
-                    let operation: &Operation = &self.operations[operation_id];
-                    let resource_group: &mut ResourceGroup = &mut self.resource_groups[operation.assigned_resource_group_id];
+                        match resource_group.find_best_resource_for_operation(operation.duration, current_time) {
+                            Some((resource_id, span)) if span.start == current_time => {
+                                resource_group.allocate_resource(resource_id, span);
 
-                    if let Some((allocated_resource_id, work_span)) = resource_group.allocate_best_resource_for_operation(operation.duration, current_time) {
-                        let operation: &mut Operation = &mut self.operations[operation_id];
-                        operation.assigned_resource_id = Some(allocated_resource_id);
-                        operation.scheduled_span = Some(work_span);
+                                let operation_mut = &mut self.operations[operation_id];
+                                operation_mut.assigned_resource_id = Some(resource_id);
+                                operation_mut.scheduled_span = Some(span);
 
-                        unscheduled_operations_count -= 1;
+                                unscheduled_operations_count -= 1;
+                                current_completed.push(operation_id);
 
-                        current_completed_operation_ids.push(operation_id);
-
-                        // if work_span.start == current_time {
-
-                        // } else {
-                        //     current_time_queue.push_back(operation_id);
-                        // }
-                    } else {
-                        current_time_queue.push_back(operation_id);
+                                any_scheduled = true;
+                            }
+                            Some((_resource_id, span)) => {
+                                self.pending_operation_ids
+                                    .entry(span.start)
+                                    .or_default()
+                                    .push_back(operation_id);
+                            }
+                            None => {
+                                return Err(format!("Resource group {} cannot allocate operation {} at all", operation.assigned_resource_group_id, operation_id));
+                            }
+                        }
                     }
+                }
+
+                self.add_successors_to_pending_operations(current_time, current_completed, strategy);
+
+                for queue in self.pending_operation_ids.values_mut() {
+                    sort_queue_by_strategy(&self.operations, &self.batches, &self.critical_path_data, queue, strategy);
+                }
+
+                if !any_scheduled {
+                    break;
                 }
             }
 
             if unscheduled_operations_count == 0 {
                 break;
             }
-
-            self.add_successors_to_pending_operations(current_time, current_completed_operation_ids, strategy);
 
             let next_event_time: Time = self
                 .find_next_event_time(current_time)
@@ -382,10 +389,12 @@ impl Schedule {
                 return Err(format!("unable to find next_event_time after current_time: {current_time}. unscheduled_operations_count: {unscheduled_operations_count}"));
             }
 
-            self.update_pending_operation_ids(current_time, next_event_time);
-
-            for queue in self.pending_operation_ids.values_mut() {
-                sort_queue_by_strategy(&self.operations, &self.batches, &self.critical_path_data, queue, strategy);
+            if self
+                .pending_operation_ids
+                .get(&current_time)
+                .map_or(false, |q| q.is_empty())
+            {
+                self.pending_operation_ids.remove(&current_time);
             }
 
             current_time = next_event_time;
@@ -467,7 +476,9 @@ impl Schedule {
             let operation: &mut Operation = &mut self.operations[operation_id];
             let resource_group: &mut ResourceGroup = &mut self.resource_groups[operation.assigned_resource_group_id];
 
-            if let Some((allocated_resource_id, work_span)) = resource_group.allocate_best_resource_for_operation(operation.duration, operation_earliest_start) {
+            if let Some((allocated_resource_id, work_span)) = resource_group.find_best_resource_for_operation(operation.duration, operation_earliest_start) {
+                resource_group.allocate_resource(allocated_resource_id, work_span);
+
                 operation.assigned_resource_id = Some(allocated_resource_id);
                 operation.scheduled_span = Some(work_span);
                 let operation: &Operation = &self.operations[operation_id];
