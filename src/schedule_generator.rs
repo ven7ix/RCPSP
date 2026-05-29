@@ -22,6 +22,7 @@ pub struct GenerationConfig {
     pub max_batch_start_time: Time,
     pub batch_due_time_factor: f64,
     pub extra_precedence_probability: f64,
+    pub seed_count: u64,
     pub random_seed: u64,
 }
 
@@ -39,6 +40,7 @@ impl Default for GenerationConfig {
             max_batch_start_time: 0,
             batch_due_time_factor: 1.0,
             extra_precedence_probability: 0.0,
+            seed_count: 10,
             random_seed: 0,
         }
     }
@@ -146,7 +148,7 @@ pub fn generate_schedule(config: &GenerationConfig) -> Schedule {
             .map(|&op_id| schedule.operations[op_id].duration)
             .sum();
         let slack = (total_duration as f64 * config.batch_due_time_factor) as Time;
-        let due = schedule.batches[batch_id].start_time + slack + rng.random_range(0..=5);
+        let due = schedule.batches[batch_id].start_time + slack;
         schedule.batches[batch_id].due_time = due;
         schedule.batches[batch_id].operation_ids = op_ids.clone();
     }

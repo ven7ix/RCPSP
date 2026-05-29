@@ -1,14 +1,14 @@
 Parallel Leaderboard -----------------------------------------------------
 Placement   Strategy                        Avg time        Total points  
 --------------------------------------------------------------------------
-1           MostSuccessorsFirst             508.8           897           
-2           LongestSuccessorDuration        508.7           1356          
-3           LongestCriticalPathFirst        506.3           1719          
--           ShortestDurationFirst           525.8           3055          
--           DueTimeThenPriority             528.3           3180          
--           PriorityThenDueTime             529.5           3336          
--           Random                          527.0           3564          
--           EarliestDueDate                 528.2           3904          
--           LongestDurationFirst            533.5           3933          
--           FewestSuccessorsFirst           533.8           4009          
--           ShortestSuccessorDuration       533.3           4047          
+1           MostSuccessorsFirst             991.7           1013          
+2           LongestCriticalPathFirst        977.8           1169          
+3           LongestSuccessorDuration        993.4           1382          
+-           ShortestDurationFirst           1026.9          3221          
+-           DueTimeThenPriority             1031.7          3243          
+-           Random                          1031.9          3539          
+-           PriorityThenDueTime             1034.2          3562          
+-           EarliestDueDate                 1031.7          3794          
+-           ShortestSuccessorDuration       1041.3          4019          
+-           FewestSuccessorsFirst           1041.4          4025          
+-           LongestDurationFirst            1042.6          4033          

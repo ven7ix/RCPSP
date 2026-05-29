@@ -17,7 +17,7 @@ fn main() {
         GenerationConfig::default()
     };
 
-    run_leaderboard(&config, 500);
+    run_leaderboard(&config, config.seed_count);
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────
@@ -52,7 +52,10 @@ fn run_leaderboard(config: &GenerationConfig, seed_count: u64) {
         .map(|&s| StrategyStats::new(s))
         .collect();
 
-    for seed in 0..seed_count {
+    let min_seed = config.random_seed;
+    let max_seed = config.random_seed + config.seed_count;
+
+    for seed in min_seed..max_seed {
         let mut seeded_config = config.clone();
         seeded_config.random_seed = seed;
         let base_schedule = generate_schedule(&seeded_config);
