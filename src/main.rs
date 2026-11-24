@@ -1,23 +1,24 @@
 use rcpsp::schedule::*;
 use rcpsp::schedule_generator::*;
+use rcpsp::time::Time;
 use std::env;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 fn main() {
-    let config: GenerationConfig = if let Some(path) = env::args().nth(1) {
-        let path: PathBuf = PathBuf::from(path);
-        match load_config_from_json(&path) {
-            Ok(cfg) => cfg,
-            Err(e) => {
+    let config: GenerationConfig = match env::args().nth(1) {
+        Some(path) => {
+            let path = PathBuf::from(path);
+            load_config_from_json(&path).unwrap_or_else(|e| {
                 eprintln!("Error while loading config {}: {}", path.display(), e);
                 std::process::exit(1);
-            }
+            })
         }
-    } else {
-        GenerationConfig::default()
+        None => GenerationConfig::default(),
     };
 
-    run_leaderboard(&config, config.seed_count);
+    run_leaderboard(&config);
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ fn main() {
 struct StrategyStats {
     strategy: SortStrategy,
     total_time: u64,
+    /// Сумма мест по всем запускам (меньше — лучше).
     rank_sum: usize,
     run_count: usize,
 }
@@ -35,112 +37,115 @@ impl StrategyStats {
     }
 
     fn avg_time(&self) -> f64 {
-        if self.run_count == 0 {
-            return 0.0;
-        }
-        self.total_time as f64 / self.run_count as f64
+        if self.run_count == 0 { 0.0 } else { self.total_time as f64 / self.run_count as f64 }
     }
 }
 
-fn run_leaderboard(config: &GenerationConfig, seed_count: u64) {
-    let mut serial_stats: Vec<StrategyStats> = SortStrategy::all()
+fn run_leaderboard(config: &GenerationConfig) {
+    // Статистика по каждому алгоритму; порядок совпадает с `Algorithm::ALL`.
+    let mut stats: Vec<Vec<StrategyStats>> = Algorithm::ALL
         .iter()
-        .map(|&s| StrategyStats::new(s))
-        .collect();
-    let mut parallel_stats: Vec<StrategyStats> = SortStrategy::all()
-        .iter()
-        .map(|&s| StrategyStats::new(s))
+        .map(|_| {
+            SortStrategy::all()
+                .iter()
+                .map(|&strategy| StrategyStats::new(strategy))
+                .collect()
+        })
         .collect();
 
-    let min_seed = config.random_seed;
-    let max_seed = config.random_seed + config.seed_count;
-
-    for seed in min_seed..max_seed {
+    let seeds = config.random_seed..config.random_seed + config.seed_count;
+    for (index, seed) in seeds.enumerate() {
         let mut seeded_config = config.clone();
         seeded_config.random_seed = seed;
-        let base_schedule = generate_schedule(&seeded_config);
+        let mut base_schedule = generate_schedule(&seeded_config);
+        base_schedule.random_seed = seed; // воспроизводимая стратегия Random
 
-        println!("Seed {:>4}/{} ", seed + 1, seed_count);
+        println!("Seed {:>4}/{} ", index + 1, config.seed_count);
 
-        run_seed_serial(&base_schedule, &mut serial_stats);
-        run_seed_parallel(&base_schedule, &mut parallel_stats);
+        for (&algorithm, algorithm_stats) in Algorithm::ALL.iter().zip(&mut stats) {
+            match run_seed(&base_schedule, algorithm) {
+                Ok(times) => accumulate(&times, algorithm_stats),
+                // Сид пропускается целиком, чтобы сбой не искажал места остальных стратегий.
+                Err(e) => eprintln!("Seed {seed}: {algorithm:?} failed: {e}"),
+            }
+        }
     }
 
-    if let Err(e) = save_leaderboard_to_file("leaderboard_serial.txt", "Serial", &mut serial_stats) {
-        eprintln!("Failed to save leaderboard: {}", e);
-    }
-    if let Err(e) = save_leaderboard_to_file("leaderboard_parallel.txt", "Parallel", &mut parallel_stats) {
-        eprintln!("Failed to save leaderboard: {}", e);
+    for (algorithm, algorithm_stats) in Algorithm::ALL.iter().zip(&mut stats) {
+        let label = format!("{algorithm:?}");
+        let filename = format!("leaderboard_{}.txt", label.to_lowercase());
+        if let Err(e) = save_leaderboard_to_file(&filename, &label, algorithm_stats) {
+            eprintln!("Failed to save leaderboard {filename}: {e}");
+        }
     }
 }
 
-fn run_seed_serial(base_schedule: &Schedule, stats: &mut Vec<StrategyStats>) {
-    let mut results: Vec<(usize, u32)> = SortStrategy::all()
+/// Длительность расписания для каждой стратегии (в порядке `SortStrategy::all()`).
+fn run_seed(base_schedule: &Schedule, algorithm: Algorithm) -> Result<Vec<Time>, String> {
+    SortStrategy::all()
         .iter()
-        .enumerate()
-        .filter_map(|(i, &strategy)| {
+        .map(|&strategy| {
             let mut schedule = base_schedule.clone();
-            schedule.compute_serial(strategy).ok()?;
-            Some((i, schedule.total_execute_time()))
+            schedule.compute(algorithm, strategy)?;
+            Ok(schedule.total_execute_time())
         })
-        .collect();
-
-    accumulate(&mut results, stats);
+        .collect()
 }
 
-fn run_seed_parallel(base_schedule: &Schedule, stats: &mut Vec<StrategyStats>) {
-    let mut results: Vec<(usize, u32)> = SortStrategy::all()
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &strategy)| {
-            let mut schedule = base_schedule.clone();
-            schedule.compute_parallel(strategy).ok()?;
-            Some((i, schedule.total_execute_time()))
-        })
-        .collect();
-
-    accumulate(&mut results, stats);
-}
-
-fn accumulate(results: &mut Vec<(usize, u32)>, stats: &mut Vec<StrategyStats>) {
-    results.sort_by_key(|&(_, time)| time);
-
-    for (rank, &(strategy_idx, time)) in results.iter().enumerate() {
-        stats[strategy_idx].total_time += time as u64;
-        stats[strategy_idx].rank_sum += rank + 1;
-        stats[strategy_idx].run_count += 1;
+/// Места раздаются по длительности расписания; при равенстве стратегии делят одно место
+/// (иначе выигрывала бы та, что стоит раньше в списке).
+fn accumulate(times: &[Time], stats: &mut [StrategyStats]) {
+    for (stat, &time) in stats.iter_mut().zip(times) {
+        stat.rank_sum += 1 + times
+            .iter()
+            .filter(|&&other| other < time)
+            .count();
+        stat.total_time += u64::from(time);
+        stat.run_count += 1;
     }
 }
 
-fn save_leaderboard_to_file(filename: &str, label: &str, stats: &mut Vec<StrategyStats>) -> std::io::Result<()> {
-    use std::fs::File;
-    use std::io::Write;
+fn save_leaderboard_to_file(filename: &str, label: &str, stats: &mut [StrategyStats]) -> std::io::Result<()> {
+    const NAME_WIDTH: usize = 30;
+    const COL: usize = 14;
 
     stats.sort_by(|a, b| {
         a.rank_sum
             .cmp(&b.rank_sum)
-            .then_with(|| a.avg_time().partial_cmp(&b.avg_time()).unwrap())
+            .then_with(|| a.avg_time().total_cmp(&b.avg_time()))
     });
 
-    let mut file = File::create(&filename)?;
-
-    let name_width = 30usize;
-    let col = 14usize;
-
-    writeln!(file, "{} Leaderboard {}", label, "-".repeat(53))?;
-    writeln!(file, "{:<10}  {:<name_width$}  {:<col$}  {:<col$}", "Placement", "Strategy", "Avg time", "Total points", name_width = name_width, col = col)?;
-    writeln!(file, "{}", "-".repeat(name_width + col * 2 + 16))?;
+    let mut file = BufWriter::new(File::create(filename)?);
+    writeln!(file, "{label} Leaderboard {}", "-".repeat(53))?;
+    writeln!(file, "{:<10}  {:<NAME_WIDTH$}  {:<COL$}  {:<COL$}", "Placement", "Strategy", "Avg time", "Total points")?;
+    writeln!(file, "{}", "-".repeat(NAME_WIDTH + COL * 2 + 16))?;
 
     for (place, s) in stats.iter().enumerate() {
-        let medal = match place {
-            0 => "1",
-            1 => "2",
-            2 => "3",
-            _ => "-",
-        };
-        writeln!(file, "{:<10}  {:<name_width$}  {:<col$.1}  {:<col$}", medal, format!("{:?}", s.strategy), s.avg_time(), s.rank_sum, name_width = name_width, col = col,)?;
+        let medal = if place < 3 { (place + 1).to_string() } else { "-".to_string() };
+        writeln!(file, "{:<10}  {:<NAME_WIDTH$}  {:<COL$.1}  {:<COL$}", medal, format!("{:?}", s.strategy), s.avg_time(), s.rank_sum)?;
     }
+    file.flush()?;
 
-    println!("Leaderboard saved to {}", filename);
-    return Ok(());
+    println!("Leaderboard saved to {filename}");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn equal_times_share_the_same_place() {
+        let mut stats: Vec<StrategyStats> = SortStrategy::all()
+            .iter()
+            .take(3)
+            .map(|&s| StrategyStats::new(s))
+            .collect();
+
+        accumulate(&[10, 10, 20], &mut stats);
+
+        let places: Vec<usize> = stats.iter().map(|s| s.rank_sum).collect();
+        assert_eq!(places, vec![1, 1, 3]);
+        assert_eq!(stats[2].total_time, 20);
+    }
 }

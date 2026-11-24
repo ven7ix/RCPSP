@@ -6,32 +6,52 @@ use crate::{
 #[derive(Clone)]
 pub struct Resource {
     pub id: ResourceId,
+    /// Занятые интервалы: не пересекаются и всегда отсортированы по времени.
     pub allocations: Vec<Span>,
 }
 
 impl Resource {
     pub fn new(id: ResourceId) -> Self {
-        return Self { id: id, allocations: Vec::new() };
+        Self { id, allocations: Vec::new() }
     }
 
-    pub fn find_free_span(&self, duration: Time, after_time: Time) -> Option<Span> {
-        let mut potential_span: Span = Span::new(after_time, duration);
-
-        loop {
-            if let Some(allocation) = self
-                .allocations
-                .iter()
-                .find(|span: &&Span| potential_span.overlaps(&span))
-            {
-                potential_span = Span::new(allocation.end, duration);
-            } else {
-                return Some(potential_span);
-            }
+    /// Самый ранний свободный интервал длиной `duration`, начинающийся не раньше `after_time`
+    /// (учитывает «окна» между уже занятыми интервалами).
+    pub fn find_free_span(&self, duration: Time, after_time: Time) -> Span {
+        // Операция нулевой длины ресурс не занимает.
+        if duration == 0 {
+            return Span::new(after_time, 0);
         }
+
+        let mut start = after_time;
+        for allocation in &self.allocations {
+            if allocation.end <= start {
+                continue;
+            }
+            if allocation.start >= start + duration {
+                break; // окно перед этим интервалом достаточно большое
+            }
+            start = allocation.end;
+        }
+        Span::new(start, duration)
     }
 
     pub fn allocate(&mut self, span: Span) {
-        self.allocations.push(span);
+        if span.duration() == 0 {
+            return;
+        }
+        debug_assert!(
+            self.allocations
+                .iter()
+                .all(|a| !a.overlaps(&span)),
+            "resource {} is double-booked",
+            self.id
+        );
+
+        let position = self
+            .allocations
+            .partition_point(|a| a.start < span.start);
+        self.allocations.insert(position, span);
     }
 }
 
@@ -39,47 +59,30 @@ impl Resource {
 pub struct ResourceGroup {
     pub id: ResourceGroupId,
     pub resources: Vec<Resource>,
-    pub next_available_time: Time,
 }
 
 impl ResourceGroup {
     pub fn new(id: ResourceGroupId, resource_count: usize) -> Self {
-        return Self {
-            id: id,
-            resources: (0..resource_count)
-                .map(|id: ResourceId| Resource::new(id))
-                .collect(),
-            next_available_time: 0,
-        };
+        Self { id, resources: (0..resource_count).map(Resource::new).collect() }
     }
 
-    fn update_next_available_time(&mut self) {
-        self.next_available_time = self
-            .resources
-            .iter()
-            .filter_map(|resource| resource.allocations.last().map(|span| span.end))
-            .min()
-            .unwrap_or(0);
-    }
-
+    /// Ресурс группы, на котором операция начнётся раньше всего (при равенстве — с меньшим номером).
+    /// `None`, если в группе нет ресурсов.
     pub fn find_best_resource_for_operation(&self, duration: Time, after_time: Time) -> Option<(ResourceId, Span)> {
-        let mut best: Option<(ResourceId, Span)> = None;
-        for (i, resource) in self.resources.iter().enumerate() {
-            if let Some(span) = resource.find_free_span(duration, after_time) {
-                match best {
-                    None => best = Some((i, span)),
-                    Some((_, ref best_span)) if span.start < best_span.start => {
-                        best = Some((i, span));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        return best;
+        self.resources
+            .iter()
+            .enumerate()
+            .map(|(id, resource)| (id, resource.find_free_span(duration, after_time)))
+            .min_by_key(|&(_, span)| span.start)
     }
 
     pub fn allocate_resource(&mut self, resource_id: ResourceId, span: Span) {
         self.resources[resource_id].allocate(span);
-        self.update_next_available_time();
+    }
+
+    pub fn clear(&mut self) {
+        self.resources
+            .iter_mut()
+            .for_each(|resource| resource.allocations.clear());
     }
 }

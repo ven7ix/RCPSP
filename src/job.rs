@@ -16,21 +16,12 @@ pub struct Operation {
 }
 
 impl Operation {
-    pub fn new(id: usize, duration: Time, assigned_batch_id: BatchId, assigned_resource_group_id: ResourceGroupId) -> Self {
-        return Self {
-            id: id,
-            duration: duration,
-            assigned_batch_id: assigned_batch_id,
-            assigned_resource_group_id: assigned_resource_group_id,
-            predecessor_ids: Vec::new(),
-            successor_ids: Vec::new(),
-            assigned_resource_id: None,
-            scheduled_span: None,
-        };
+    pub fn new(id: OperationId, duration: Time, assigned_batch_id: BatchId, assigned_resource_group_id: ResourceGroupId) -> Self {
+        Self { id, duration, assigned_batch_id, assigned_resource_group_id, predecessor_ids: Vec::new(), successor_ids: Vec::new(), assigned_resource_id: None, scheduled_span: None }
     }
 
     pub fn is_scheduled(&self) -> bool {
-        return self.scheduled_span.is_some();
+        self.scheduled_span.is_some()
     }
 }
 
@@ -45,12 +36,6 @@ pub struct Batch {
 
 impl Batch {
     pub fn new(id: BatchId, start_time: Time, due_time: Time, priority: usize) -> Self {
-        return Self {
-            id: id,
-            operation_ids: Vec::new(),
-            start_time: start_time,
-            due_time: due_time,
-            priority: priority,
-        };
+        Self { id, operation_ids: Vec::new(), start_time, due_time, priority }
     }
 }

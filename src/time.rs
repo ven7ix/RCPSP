@@ -1,18 +1,22 @@
 pub type Time = u32;
 
-#[derive(Copy, Clone)]
+/// Полуинтервал `[start, end)`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Span {
     pub start: Time,
     pub end: Time,
-    pub duration: Time,
 }
 
 impl Span {
     pub fn new(start: Time, duration: Time) -> Self {
-        return Self { start: start, end: start + duration, duration: duration };
+        Self { start, end: start + duration }
+    }
+
+    pub fn duration(&self) -> Time {
+        self.end - self.start
     }
 
     pub fn overlaps(&self, other: &Span) -> bool {
-        return self.start < other.end && other.start < self.end;
+        self.start < other.end && other.start < self.end
     }
 }
