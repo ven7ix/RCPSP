@@ -53,6 +53,9 @@ impl Algorithm {
     pub const ALL: [Algorithm; 2] = [Algorithm::Serial, Algorithm::Parallel];
 }
 
+/// Сколько двусторонних проходов `find_best` и лидерборд делают по умолчанию, пока есть улучшение.
+pub const DEFAULT_IMPROVE_ROUNDS: usize = 10;
+
 // ─── Critical path ────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -361,16 +364,103 @@ impl Schedule {
         self.ensure_all_scheduled(scheduled)
     }
 
+    // ─── Improvement (forward-backward) ───────────────────────────────────────
+
+    /// Зеркальная задача: связи развёрнуты, времена готовности партий сброшены в 0.
+    /// Расписание в ней, прочитанное с конца, — это «сдвиг всех операций как можно позже».
+    fn mirrored(&self) -> Schedule {
+        let mut mirror = self.clone();
+        mirror.reset();
+        for op in &mut mirror.operations {
+            std::mem::swap(&mut op.predecessor_ids, &mut op.successor_ids);
+        }
+        for batch in &mut mirror.batches {
+            batch.start_time = 0;
+        }
+        mirror
+    }
+
+    /// Один двусторонний проход: возвращает новое корректное расписание (не обязательно лучшее).
+    ///
+    /// 1. Назад: операции по убыванию окончания строятся тем же алгоритмом в зеркальной задаче,
+    ///    так получаются самые поздние старты при неизменной длительности.
+    /// 2. Вперёд: порядок самых поздних стартов становится приоритетом, и расписание
+    ///    строится заново тем же алгоритмом с самым ранним временем начала.
+    fn justified(&self, algorithm: Algorithm) -> Result<Schedule, String> {
+        let span = |op: &Operation| {
+            op.scheduled_span
+                .expect("justified is called on a computed schedule")
+        };
+        let horizon = i64::from(self.total_execute_time());
+
+        let backward_keys: Vec<PriorityKey> = self
+            .operations
+            .iter()
+            .map(|op| (-i64::from(span(op).end), -i64::from(span(op).start)))
+            .collect();
+        let mut mirror = self.mirrored();
+        mirror.run(algorithm, &backward_keys)?;
+
+        let forward_keys: Vec<PriorityKey> = self
+            .operations
+            .iter()
+            .zip(&mirror.operations)
+            .map(|(op, mirrored_op)| {
+                // В обратном времени операция занимает [s, e), в исходном — [horizon - e, horizon - s).
+                let latest_start = horizon - i64::from(span(mirrored_op).end);
+                (latest_start, i64::from(span(op).start))
+            })
+            .collect();
+        let mut candidate = self.clone();
+        candidate.run(algorithm, &forward_keys)?;
+        Ok(candidate)
+    }
+
+    /// Улучшает уже построенное расписание повторными двусторонними проходами, пока длительность
+    /// уменьшается, но не более `max_rounds` раз. Принимаются только строго лучшие результаты,
+    /// поэтому длительность никогда не растёт. Возвращает число принятых проходов.
+    pub fn improve(&mut self, algorithm: Algorithm, max_rounds: usize) -> Result<usize, String> {
+        if self
+            .operations
+            .iter()
+            .any(|op| !op.is_scheduled())
+        {
+            return Err("schedule must be computed before improving it".to_string());
+        }
+
+        let mut accepted = 0;
+        while accepted < max_rounds {
+            let candidate = self.justified(algorithm)?;
+            if candidate.total_execute_time() >= self.total_execute_time() {
+                break;
+            }
+            *self = candidate;
+            accepted += 1;
+        }
+        Ok(accepted)
+    }
+
     // ─── Public API ───────────────────────────────────────────────────────────
+
+    /// Строит расписание по готовым ключам приоритета (прошлый результат сбрасывается).
+    fn run(&mut self, algorithm: Algorithm, keys: &[PriorityKey]) -> Result<(), String> {
+        self.reset();
+        match algorithm {
+            Algorithm::Serial => self.schedule_serial(keys),
+            Algorithm::Parallel => self.schedule_parallel(keys),
+        }
+    }
 
     /// Строит расписание выбранным алгоритмом и правилом приоритета (прошлый результат сбрасывается).
     pub fn compute(&mut self, algorithm: Algorithm, strategy: SortStrategy) -> Result<(), String> {
-        self.reset();
         let keys = self.priority_keys(strategy)?;
-        match algorithm {
-            Algorithm::Serial => self.schedule_serial(&keys),
-            Algorithm::Parallel => self.schedule_parallel(&keys),
-        }
+        self.run(algorithm, &keys)
+    }
+
+    /// То же, что `compute`, но затем расписание улучшается двусторонним проходом (см. `improve`).
+    pub fn compute_improved(&mut self, algorithm: Algorithm, strategy: SortStrategy, max_rounds: usize) -> Result<(), String> {
+        self.compute(algorithm, strategy)?;
+        self.improve(algorithm, max_rounds).map(|_| ())
     }
 
     pub fn compute_serial(&mut self, strategy: SortStrategy) -> Result<(), String> {
@@ -383,12 +473,13 @@ impl Schedule {
 
     /// Перебирает все стратегии и возвращает расписание с наименьшей длительностью.
     /// `None`, если ни одна стратегия не смогла построить расписание.
-    pub fn find_best(original: &Schedule, algorithm: Algorithm) -> Option<(Schedule, SortStrategy)> {
+    /// При `improve_rounds > 0` каждое расписание дополнительно улучшается двусторонним проходом.
+    pub fn find_best(original: &Schedule, algorithm: Algorithm, improve_rounds: usize) -> Option<(Schedule, SortStrategy)> {
         SortStrategy::all()
             .iter()
             .filter_map(|&strategy| {
                 let mut schedule = original.clone();
-                match schedule.compute(algorithm, strategy) {
+                match schedule.compute_improved(algorithm, strategy, improve_rounds) {
                     Ok(()) => Some((schedule, strategy)),
                     Err(e) => {
                         eprintln!("{algorithm:?} with strategy {strategy:?} failed: {e}");

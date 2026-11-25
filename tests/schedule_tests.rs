@@ -235,7 +235,7 @@ fn random_strategy_is_reproducible() {
 fn find_best_is_not_worse_than_any_strategy() {
     let base = generate_schedule(&test_config(11));
     for algorithm in Algorithm::ALL {
-        let (best, _) = Schedule::find_best(&base, algorithm).unwrap();
+        let (best, _) = Schedule::find_best(&base, algorithm, 0).unwrap();
         assert_valid(&best, "find_best");
 
         for &strategy in SortStrategy::all() {
@@ -244,4 +244,71 @@ fn find_best_is_not_worse_than_any_strategy() {
             assert!(best.total_execute_time() <= schedule.total_execute_time());
         }
     }
+}
+
+#[test]
+fn improvement_fixes_a_bad_order() {
+    // C и D занимают обе машины, цепочка A → B стартует только в 4: длительность 12, оптимум 8.
+    for algorithm in Algorithm::ALL {
+        let build_bad = || build(&[2], &[0], &[(4, 0, 0), (4, 0, 0), (4, 0, 0), (4, 0, 0)], &[(2, 3)]);
+
+        let mut plain = build_bad();
+        plain
+            .compute(algorithm, SortStrategy::ShortestDurationFirst)
+            .unwrap();
+        assert_eq!(plain.total_execute_time(), 12, "{algorithm:?} baseline");
+
+        let mut improved = build_bad();
+        improved
+            .compute_improved(algorithm, SortStrategy::ShortestDurationFirst, DEFAULT_IMPROVE_ROUNDS)
+            .unwrap();
+        assert_valid(&improved, &format!("{algorithm:?} improved"));
+        assert_eq!(improved.total_execute_time(), 8, "{algorithm:?} improved");
+    }
+}
+
+#[test]
+fn improvement_is_valid_and_never_worse() {
+    for seed in 0..40 {
+        let base = generate_schedule(&test_config(seed));
+        for algorithm in Algorithm::ALL {
+            for &strategy in SortStrategy::all() {
+                let mut schedule = base.clone();
+                schedule.compute(algorithm, strategy).unwrap();
+                let before = schedule.total_execute_time();
+
+                schedule
+                    .improve(algorithm, DEFAULT_IMPROVE_ROUNDS)
+                    .unwrap();
+                assert_valid(&schedule, &format!("improved {algorithm:?} {strategy:?} seed {seed}"));
+                assert!(schedule.total_execute_time() <= before, "{algorithm:?} {strategy:?} seed {seed}: {} > {before}", schedule.total_execute_time());
+            }
+        }
+    }
+}
+
+#[test]
+fn improving_an_uncomputed_schedule_is_an_error() {
+    let mut schedule = build(&[1], &[0], &[(1, 0, 0)], &[]);
+    assert!(schedule.improve(Algorithm::Serial, 3).is_err());
+}
+
+#[test]
+fn zero_rounds_changes_nothing() {
+    let mut schedule = generate_schedule(&test_config(5));
+    schedule
+        .compute(Algorithm::Parallel, SortStrategy::Random)
+        .unwrap();
+    let before: Vec<_> = schedule
+        .operations
+        .iter()
+        .map(|op| op.scheduled_span)
+        .collect();
+    assert_eq!(schedule.improve(Algorithm::Parallel, 0).unwrap(), 0);
+    let after: Vec<_> = schedule
+        .operations
+        .iter()
+        .map(|op| op.scheduled_span)
+        .collect();
+    assert_eq!(before, after);
 }

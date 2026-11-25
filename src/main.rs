@@ -23,6 +23,27 @@ fn main() {
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────
 
+/// Что именно сравнивается в лидерборде: алгоритм с улучшением или без.
+#[derive(Clone, Copy)]
+struct Mode {
+    algorithm: Algorithm,
+    improve_rounds: usize,
+}
+
+impl Mode {
+    const ALL: [Mode; 4] = [Mode { algorithm: Algorithm::Serial, improve_rounds: 0 }, Mode { algorithm: Algorithm::Parallel, improve_rounds: 0 }, Mode { algorithm: Algorithm::Serial, improve_rounds: DEFAULT_IMPROVE_ROUNDS }, Mode { algorithm: Algorithm::Parallel, improve_rounds: DEFAULT_IMPROVE_ROUNDS }];
+
+    fn label(&self) -> String {
+        let suffix = if self.improve_rounds > 0 { "Improved" } else { "" };
+        format!("{:?}{suffix}", self.algorithm)
+    }
+
+    fn file_name(&self) -> String {
+        let suffix = if self.improve_rounds > 0 { "_improved" } else { "" };
+        format!("leaderboard_{:?}{suffix}.txt", self.algorithm).to_lowercase()
+    }
+}
+
 struct StrategyStats {
     strategy: SortStrategy,
     total_time: u64,
@@ -42,8 +63,8 @@ impl StrategyStats {
 }
 
 fn run_leaderboard(config: &GenerationConfig) {
-    // Статистика по каждому алгоритму; порядок совпадает с `Algorithm::ALL`.
-    let mut stats: Vec<Vec<StrategyStats>> = Algorithm::ALL
+    // Статистика по каждому режиму; порядок совпадает с `Mode::ALL`.
+    let mut stats: Vec<Vec<StrategyStats>> = Mode::ALL
         .iter()
         .map(|_| {
             SortStrategy::all()
@@ -62,31 +83,30 @@ fn run_leaderboard(config: &GenerationConfig) {
 
         println!("Seed {:>4}/{} ", index + 1, config.seed_count);
 
-        for (&algorithm, algorithm_stats) in Algorithm::ALL.iter().zip(&mut stats) {
-            match run_seed(&base_schedule, algorithm) {
-                Ok(times) => accumulate(&times, algorithm_stats),
+        for (mode, mode_stats) in Mode::ALL.iter().zip(&mut stats) {
+            match run_seed(&base_schedule, *mode) {
+                Ok(times) => accumulate(&times, mode_stats),
                 // Сид пропускается целиком, чтобы сбой не искажал места остальных стратегий.
-                Err(e) => eprintln!("Seed {seed}: {algorithm:?} failed: {e}"),
+                Err(e) => eprintln!("Seed {seed}: {} failed: {e}", mode.label()),
             }
         }
     }
 
-    for (algorithm, algorithm_stats) in Algorithm::ALL.iter().zip(&mut stats) {
-        let label = format!("{algorithm:?}");
-        let filename = format!("leaderboard_{}.txt", label.to_lowercase());
-        if let Err(e) = save_leaderboard_to_file(&filename, &label, algorithm_stats) {
+    for (mode, mode_stats) in Mode::ALL.iter().zip(&mut stats) {
+        let filename = mode.file_name();
+        if let Err(e) = save_leaderboard_to_file(&filename, &mode.label(), mode_stats) {
             eprintln!("Failed to save leaderboard {filename}: {e}");
         }
     }
 }
 
 /// Длительность расписания для каждой стратегии (в порядке `SortStrategy::all()`).
-fn run_seed(base_schedule: &Schedule, algorithm: Algorithm) -> Result<Vec<Time>, String> {
+fn run_seed(base_schedule: &Schedule, mode: Mode) -> Result<Vec<Time>, String> {
     SortStrategy::all()
         .iter()
         .map(|&strategy| {
             let mut schedule = base_schedule.clone();
-            schedule.compute(algorithm, strategy)?;
+            schedule.compute_improved(mode.algorithm, strategy, mode.improve_rounds)?;
             Ok(schedule.total_execute_time())
         })
         .collect()
