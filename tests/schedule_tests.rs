@@ -1,6 +1,9 @@
 use rcpsp::job::*;
+use rcpsp::priority::*;
 use rcpsp::schedule::*;
 use rcpsp::schedule_generator::*;
+use rcpsp::schedulers::{self, ParallelScheduler, SerialScheduler};
+use rcpsp::solver::*;
 use rcpsp::time::*;
 use rcpsp::worker::*;
 use std::collections::HashMap;
@@ -111,7 +114,7 @@ fn parallel_schedules_are_valid_for_all_strategies() {
 fn known_makespans() {
     // Две независимые операции (3 и 4): один ресурс — 7, два ресурса — 4.
     for (resources, expected) in [(1, 7), (2, 4)] {
-        for algorithm in Algorithm::ALL {
+        for algorithm in schedulers::ALL {
             let mut schedule = build(&[resources], &[0], &[(3, 0, 0), (4, 0, 0)], &[]);
             schedule
                 .compute(algorithm, SortStrategy::LongestDurationFirst)
@@ -122,7 +125,7 @@ fn known_makespans() {
     }
 
     // Цепочка 3 → 2 не ускоряется вторым ресурсом.
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         let mut schedule = build(&[2], &[0], &[(3, 0, 0), (2, 0, 0)], &[(0, 1)]);
         schedule
             .compute(algorithm, SortStrategy::PriorityThenDueTime)
@@ -170,7 +173,7 @@ fn critical_path_data_is_correct() {
 
 #[test]
 fn cycle_is_reported_as_error() {
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         let mut schedule = build(&[1], &[0], &[(1, 0, 0), (1, 0, 0), (1, 0, 0)], &[(0, 1), (1, 2), (2, 1)]);
         assert!(
             schedule
@@ -184,7 +187,7 @@ fn cycle_is_reported_as_error() {
 
 #[test]
 fn empty_resource_group_is_reported_as_error() {
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         let mut schedule = build(&[0], &[0], &[(1, 0, 0)], &[]);
         assert!(
             schedule
@@ -198,7 +201,7 @@ fn empty_resource_group_is_reported_as_error() {
 #[test]
 fn recomputing_gives_the_same_result() {
     let mut schedule = generate_schedule(&test_config(7));
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         for &strategy in SortStrategy::all() {
             schedule.compute(algorithm, strategy).unwrap();
             let first = schedule.total_execute_time();
@@ -216,7 +219,7 @@ fn random_strategy_is_reproducible() {
     a.random_seed = 42;
     b.random_seed = 42;
 
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         a.compute(algorithm, SortStrategy::Random)
             .unwrap();
         b.compute(algorithm, SortStrategy::Random)
@@ -234,7 +237,7 @@ fn random_strategy_is_reproducible() {
 #[test]
 fn find_best_is_not_worse_than_any_strategy() {
     let base = generate_schedule(&test_config(11));
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         let (best, _) = Schedule::find_best(&base, algorithm, 0).unwrap();
         assert_valid(&best, "find_best");
 
@@ -249,7 +252,7 @@ fn find_best_is_not_worse_than_any_strategy() {
 #[test]
 fn improvement_fixes_a_bad_order() {
     // C и D занимают обе машины, цепочка A → B стартует только в 4: длительность 12, оптимум 8.
-    for algorithm in Algorithm::ALL {
+    for algorithm in schedulers::ALL {
         let build_bad = || build(&[2], &[0], &[(4, 0, 0), (4, 0, 0), (4, 0, 0), (4, 0, 0)], &[(2, 3)]);
 
         let mut plain = build_bad();
@@ -271,7 +274,7 @@ fn improvement_fixes_a_bad_order() {
 fn improvement_is_valid_and_never_worse() {
     for seed in 0..40 {
         let base = generate_schedule(&test_config(seed));
-        for algorithm in Algorithm::ALL {
+        for algorithm in schedulers::ALL {
             for &strategy in SortStrategy::all() {
                 let mut schedule = base.clone();
                 schedule.compute(algorithm, strategy).unwrap();
@@ -290,21 +293,21 @@ fn improvement_is_valid_and_never_worse() {
 #[test]
 fn improving_an_uncomputed_schedule_is_an_error() {
     let mut schedule = build(&[1], &[0], &[(1, 0, 0)], &[]);
-    assert!(schedule.improve(Algorithm::Serial, 3).is_err());
+    assert!(schedule.improve(&SerialScheduler, 3).is_err());
 }
 
 #[test]
 fn zero_rounds_changes_nothing() {
     let mut schedule = generate_schedule(&test_config(5));
     schedule
-        .compute(Algorithm::Parallel, SortStrategy::Random)
+        .compute(&ParallelScheduler, SortStrategy::Random)
         .unwrap();
     let before: Vec<_> = schedule
         .operations
         .iter()
         .map(|op| op.scheduled_span)
         .collect();
-    assert_eq!(schedule.improve(Algorithm::Parallel, 0).unwrap(), 0);
+    assert_eq!(schedule.improve(&ParallelScheduler, 0).unwrap(), 0);
     let after: Vec<_> = schedule
         .operations
         .iter()
